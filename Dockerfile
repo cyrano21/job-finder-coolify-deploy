@@ -7,8 +7,9 @@ WORKDIR /app
 RUN apk add --no-cache libc6-compat openssl
 COPY package.json package-lock.json* ./
 COPY prisma ./prisma
-# Installe toutes les deps (le postinstall lance `prisma generate`)
-RUN npm ci
+# Coolify injecte parfois NODE_ENV=production comme build arg; le build Next a
+# besoin des devDependencies PostCSS/Tailwind.
+RUN npm ci --include=dev
 
 # ── Étape 2 : build ─────────────────────────────────────────────
 FROM node:20-alpine AS builder
