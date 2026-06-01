@@ -1,0 +1,296 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// Modèles pour l'application de recherche d'emploi
+
+enum UserRole {
+  FREE
+  PRO
+  COACH
+  ADMIN
+}
+
+model User {
+  id            String    @id @default(uuid())
+  email         String    @unique
+  name          String?
+  image         String?
+  role          UserRole  @default(FREE)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  cvs           CV[]
+  coverLetters  CoverLetter[]
+  profile       Profile?
+  favoriteJobs  FavoriteJob[]
+  subscription  Subscription?
+  jobAlerts     JobAlert[]
+  youngProfile  YoungProfile?
+  orientationSessions OrientationSession[]
+}
+
+model CV {
+  id            String    @id @default(uuid())
+  title         String
+  template      String    @default("professional")
+  content       Json
+  userId        String
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  coverLetters  CoverLetter[]
+}
+
+model CoverLetter {
+  id            String    @id @default(uuid())
+  title         String
+  content       String    @db.Text
+  company       String?
+  position      String?
+  tone          String    @default("formal")
+  language      String    @default("french")
+  cvId          String?
+  userId        String
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cv            CV?       @relation(fields: [cvId], references: [id], onDelete: SetNull)
+}
+
+model Profile {
+  id            String    @id @default(uuid())
+  slug          String    @unique
+  title         String
+  bio           String    @db.Text
+  socialLinks   Json?
+  projects      Json?
+  userId        String    @unique
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Job {
+  id            String    @id @default(uuid())
+  title         String
+  company       String
+  location      String
+  description   String    @db.Text
+  salary        String?
+  contractType  String?
+  experienceLevel String?
+  url           String
+  source        String
+  latitude      Float?
+  longitude     Float?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  favoriteBy    FavoriteJob[]
+}
+
+model FavoriteJob {
+  id            String    @id @default(uuid())
+  userId        String
+  jobId         String
+  matchScore    Float?
+  notes         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  job           Job       @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, jobId])
+}
+
+model Subscription {
+  id            String    @id @default(uuid())
+  userId        String    @unique
+  stripeCustomerId String  @unique
+  stripeSubscriptionId String @unique
+  stripePriceId String
+  stripeCurrentPeriodEnd DateTime
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model AICoachingSession {
+  id            String    @id @default(uuid())
+  type          String    // interview, cv_review, letter_review, etc.
+  content       Json
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model JobAlert {
+  id             String    @id @default(uuid())
+  name           String
+  // Search criteria serialized from JobSearchFilters (query, location, contractType, ...)
+  filters        Json
+  // 'instant' | 'daily' | 'weekly'
+  frequency      String    @default("daily")
+  email          String
+  active         Boolean   @default(true)
+  lastNotifiedAt DateTime?
+  userId         String
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  // Relations
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// ──────────────────────────────────────────────────────────────
+// Module Orientation — copilote d'insertion pour jeunes
+// ──────────────────────────────────────────────────────────────
+
+// Profil du jeune : la situation de départ, alimentée par le diagnostic
+model YoungProfile {
+  id          String   @id @default(cuid())
+  age         Int?
+  city        String?
+  education   String?  // niveau d'études / dernier diplôme
+  lastJob     String?
+  savingsBand String?  // tranche d'épargne (ex: "0-500", "500-2000", ...)
+  urgency     String?  // 'low' | 'medium' | 'high' — urgence à sécuriser un revenu
+  charges     String?  // dettes / charges mensuelles
+  hasLicense  Boolean? // permis de conduire
+  mobility    String?  // mobilité (transports, rayon)
+  appetences  String[] // manuel | numerique | commerce | technique | social
+  motivations String[] // alternance | formation-courte | interim | freelance | emploi-direct
+  interests   String[] // centres d'intérêt / pistes envisagées
+  constraints String[] // contraintes (mobilité, garde d'enfant, santé, ...)
+  userId      String   @unique
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  user        User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessions    OrientationSession[]
+}
+
+// Une session = un passage complet du diagnostic au plan d'action
+model OrientationSession {
+  id                 String   @id @default(cuid())
+  profileId          String
+  userId             String
+  status             String   @default("draft") // 'draft' | 'diagnosed' | 'planned' | 'completed'
+  summary            String?  @db.Text          // synthèse "brutale et structurée" de la situation
+  urgencyScore       Int?     // 0-100
+  autonomyScore      Int?     // 0-100
+  clarityScore       Int?     // 0-100
+  immediateRisks     String[] // risques immédiats identifiés
+  doNotDo            String[] // ce que le jeune ne doit PAS faire (garde-fous)
+  remainingQuestions String[] // questions restantes nécessaires
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  // Relations
+  profile      YoungProfile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  careerTracks CareerTrack[]
+  actionPlans  ActionPlan[]
+
+  @@index([userId])
+  @@index([profileId])
+}
+
+// Une piste métier évaluée par l'agent
+model CareerTrack {
+  id          String   @id @default(cuid())
+  sessionId   String
+  title       String
+  category    String   // ex: 'sans-diplome' | 'alternance' | 'formation-courte' | 'service-civique'
+  score       Int      // 0-100, cohérence avec la situation du jeune
+  reasons     String[] // pourquoi cette piste colle
+  risks       String[] // pièges / risques à connaître
+  nextActions String[] // premières actions concrètes
+  createdAt   DateTime @default(now())
+
+  // Relations
+  session     OrientationSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+}
+
+// Une tâche du plan d'action, échelonnée par horizon
+model ActionPlan {
+  id          String    @id @default(cuid())
+  sessionId   String
+  horizon     String    // '48h' | '7j' | '30j' | '90j'
+  title       String
+  description String    @db.Text
+  priority    Int       @default(1) // 1 = haute
+  status      String    @default("todo") // 'todo' | 'doing' | 'done'
+  dueDate     DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Relations
+  session     OrientationSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+}
+
+// Base de connaissances : dispositifs et ressources d'insertion
+model Resource {
+  id        String   @id @default(cuid())
+  title     String
+  type      String   // 'dispositif' | 'formation' | 'aide' | 'organisme' | 'lien'
+  url       String?
+  source    String?  // ex: 'Mission Locale', 'France Travail', 'CPF'
+  category  String   // ex: 'revenu' | 'formation' | 'accompagnement' | 'mobilite'
+  summary   String?  @db.Text
+  tags      String[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([category])
+}
+
+// ──────────────────────────────────────────────────────────────
+// Configuration des modèles IA (gérée depuis l'admin)
+// ──────────────────────────────────────────────────────────────
+// Les CLÉS API ne sont JAMAIS stockées ici : on référence seulement le NOM
+// de la variable d'environnement qui contient la clé (apiKeyEnv). Les modèles
+// locaux (Ollama, LM Studio) n'ont pas de clé et utilisent baseUrl.
+model AIModelConfig {
+  id        String   @id @default(cuid())
+  label     String   // nom affiché (ex: "GPT-4o mini", "Llama 3.3 (Groq)")
+  provider  String   // 'groq' | 'openai' | 'deepseek' | 'mistral' | 'xai' | 'gemini' | 'openrouter' | 'local'
+  model     String   // identifiant du modèle (ex: "gpt-4o-mini")
+  type      String   @default("paid") // 'free' | 'paid' | 'local'
+  baseUrl   String?  // surcharge d'URL (obligatoire pour 'local'/custom)
+  apiKeyEnv String?  // nom de la variable d'env contenant la clé (jamais la clé)
+  enabled   Boolean  @default(true)
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([enabled])
+}

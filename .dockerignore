@@ -1,0 +1,14 @@
+node_modules
+.next
+.git
+.env
+.env.local
+.pgdata
+npm-debug.log*
+README.md
+ENHANCED-DESIGN-README.md
+ADDITIONAL-CSS-FIXES-SUMMARY.md
+*.md
+.vscode
+.idea
+coverage
